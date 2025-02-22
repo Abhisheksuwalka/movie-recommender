@@ -4,6 +4,15 @@
     <img src="https://img.shields.io/badge/Datalumina-Project%20Template-2856f7" alt="Datalumina Project" />
 </a>
 
+```
+$envName=movieRecEnv OR envName=movieRecEnv
+conda create --name $envName -y
+
+
+conda activate $envName
+pip install -r requirements.txt
+```
+
 ## Cookiecutter Data Science
 This project template is a simplified version of the [Cookiecutter Data Science](https://cookiecutter-data-science.drivendata.org) template, created to suit the needs of Datalumina and made available as a GitHub template.
 

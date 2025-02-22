@@ -1,2 +1,12 @@
 ipykernel
 python-dotenv
+streamlit
+# pickle already in python.
+pandas
+numpy
+requests==2.21.0
+pyopenssl
+ndg-httpsclient
+pyasn1
+pipreqs
+dotenv
