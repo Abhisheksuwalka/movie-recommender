@@ -2,115 +2,88 @@ import streamlit as st
 import pickle
 import pandas as pd
 import requests
-import time
-from dotenv import load_dotenv
 import os
+import numpy as np
+from dotenv import load_dotenv
 
+# Load environment variables
 load_dotenv()
-
 api_key = os.getenv("API_KEY")
 Authorization = os.getenv("AUTHORIZATION")
 
-
+# Global session for efficiency
 session = requests.Session()
 session.headers.update({
     "accept": "application/json",
     "Authorization": f"Bearer {Authorization}"
 })
 
-def fetch_poster(movie_id):
+# Load movies list (pandas DataFrame)
+movies_list = pickle.load(open('./models/movies.pkl', 'rb'))  # 40 MB
+
+# Load similarity matrix efficiently
+def load_similarity():
+    """Load similarity matrix from pickle (proper format)."""
+    with open('./models/similarity_np_array.pkl', 'rb') as f:
+        return pickle.load(f)
+
+
+similarity = load_similarity()  # Avoid loading entire matrix into RAM
+
+def fetch_poster(movie_id, cache={}):
+    """Fetch movie poster URL from TMDB API with caching"""
     # return None
-    session = requests.Session()
-    session.headers.update({
-        "accept": "application/json",
-        "Authorization": f"Bearer {Authorization}"
-    })
-    
+    if movie_id in cache:
+        return cache[movie_id]  # Use cached poster
+
     url = f'https://api.themoviedb.org/3/movie/{movie_id}?api_key={api_key}'
     response = session.get(url)
-    
+
     if response.status_code != 200:
         return None
-    response_json = response.json()
-    # print(response_json)
-    poster_path = response_json.get('poster_path', '')
-    
-    if poster_path:
-        poster_link = "https://image.tmdb.org/t/p/w500" + poster_path
-        return poster_link
-    else:
-        return None
 
-movies_list = pickle.load(open('./models/movies.pkl', 'rb')) # pandas.core.frame.DataFrame
+    poster_path = response.json().get('poster_path', '')
+    poster_url = f"https://image.tmdb.org/t/p/w500{poster_path}" if poster_path else None
 
-similarity = pickle.load(open('./models/similarity_np_array.pkl', 'rb')) # numpy.ndarray
+    cache[movie_id] = poster_url  # Store in cache
+    return poster_url
 
 def recommend(movie):
-    movie_index = movies_list[movies_list[ 'title'] == movie] .index[0]
+    """Return top 5 recommended movies & posters"""
+    # Load similarity only when needed
+    similarity = load_similarity()
+
+    movie_index = movies_list[movies_list['title'] == movie].index[0]
     distances = similarity[movie_index]
-    
-    sorted_movies_list = sorted(list(enumerate(distances)), reverse=True, key = lambda x : x[1])
-    sorted_movies_list = sorted_movies_list[1:6]
-    
-    recommended_movies = []
-    recommended_movies_posters = []
-    
-        
-    for i in sorted_movies_list:
-        movie_id = movies_list.iloc[i[0]].id
-         
-        recommended_movies.append(movies_list.iloc[i[0]]['title'])
-        # fetch poster from API
-        recommended_movies_posters.append(fetch_poster(movie_id))
-        # wait_time = 0.5
-        # time.sleep(wait_time)
-    
+
+    # Use argpartition for efficient sorting
+    top_indices = np.argpartition(distances, -6)[-6:]
+    top_indices = top_indices[np.argsort(distances[top_indices])][::-1][1:6]
+
+    recommended_movies = movies_list.iloc[top_indices]['title'].tolist()
+    recommended_movies_posters = [fetch_poster(movies_list.iloc[i].id) for i in top_indices]
+
+    # ✅ Free memory after use
+    del similarity  
+
     return recommended_movies, recommended_movies_posters
 
-##  # # # # # # # # # # # #  App
+# Streamlit UI
+st.title('Movie Recommender System 🎬')
+st.write('Enter a movie you like, and we will suggest similar movies!')
 
-
-st.title('Movie Recommender System')
-st.write('Welcome to the Movie Recommender System! Please enter the name of a movie you like and we will recommend you some similar movies.')
-
-
-option = st.selectbox(
-    'Select a movie:',
-    movies_list['title'].values
-    )
+option = st.selectbox('Select a movie:', movies_list['title'].values)
 
 if st.button('Recommend'):
-    session.close()
-    
-    st.write('You selected:', option)
-    st.write('Here are some recommendations for you:')
+    st.write(f'### Recommendations for **{option}**:')
     names, posters = recommend(option)
-    # posters is a list of ["https://image.tmdb.org/t/p/w500/lpxDrACKJhbbGOlwVMNz5YCj6SI.jpg"]
-    
-    col1, col2, col3, col4, col5 = st.columns(5)
-    with col1:
-        st.text(names[0])
-        # add poster
-        if(posters[0] != None):
-            st.image(posters[0])
-    with col2:
-        st.text(names[1])
-        # add poster
-        if(posters[1] != None):
-            st.image(posters[1])
-    with col3:
-        st.text(names[2])
-        # add poster
-        if(posters[2] != None):
-            st.image(posters[2])
+    # st.text('hi')
 
-    with col4:
-        st.text(names[3])
-        # add poster
-        if(posters[3] != None):
-            st.image(posters[3])
-    with col5:
-        st.text(names[4])
-        # add poster
-        if(posters[4] != None):
-            st.image(posters[4])
+    # Streamlit column layout for recommendations
+    cols = st.columns(5)
+    for idx, col in enumerate(cols):
+        with col:
+            st.markdown(f"**{names[idx]}**")
+            if posters[idx]:
+                st.image(posters[idx])
+    del names, posters
